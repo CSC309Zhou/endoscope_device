@@ -1,0 +1,2 @@
+set;RMW_IMPLEMENTATION;rmw_fastrtps_cpp
+set;FASTRTPS_DEFAULT_PROFILES_FILE;share/endoscope_device/config/fastdds_local.xml

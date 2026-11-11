@@ -1,0 +1,166 @@
+# endoscope_device：设备与图像参数（当前内窥镜 0c45:64ab）。
+# 按README使用--symlink-install编译后，默认安装配置链接到此文件；修改后保存并重启，无需重编译。
+# 同机大图传输默认使用 Fast DDS 64MiB 共享内存，另见 fastdds_local.xml，自动加载。
+#
+# 参数优先关系：
+# 1. controls.apply=false：不写入任何 controls.* 控制，保留设备原有状态；
+#    后面的自动/手动开关也不下发，不会强制设备进入自动模式。
+# 2. controls.apply=true 时：
+#    auto_exposure=true → 由设备自动曝光，exposure_time_us仅保存为手动备用值；
+#    auto_exposure=false → 下发 exposure_time_us。
+#    auto_white_balance=true → 设备自动白平衡，white_balance_temperature仅作备用；
+#    auto_white_balance=false → 下发 white_balance_temperature。
+# 3. 亮度、对比度、饱和度、色相、伽马、增益、锐度、背光补偿、防闪烁：
+#    controls.apply=true时均下发；节点不会因为自动曝光/白平衡开启而屏蔽它们。
+#    以上指节点的下发规则；硬件自动算法如何影响最终画面由设备固件决定。
+#
+# controls.apply以外的设备控制可用ros2 param set运行时修改；只改ROS参数不会保存回本文件。
+# 其余参数建议修改文件后重启节点。所有数值即使当前未使用也应填写合法值。
+# 下面范围来自本设备实读；换设备需按新设备的能力修改，未支持的模式/控制项会报错。
+/**:
+  ros__parameters:
+    # 是否启动后自动配置设备并采集；可选true/false。
+    # true：自动启动；false：等待手动生命周期configure和activate，不自动出图。
+    # 仅进程启动时使用，之后修改此值不会立即启停采集。
+    autostart: true
+
+    # 要打开的V4L2视频采集设备，可填写/dev/videoX或/dev/v4l/by-id/...。
+    # 推荐固定链接以避免重插后video编号变化；须指向采集节点，不是元数据节点。
+    device: /dev/v4l/by-id/usb-DP-251024-J_HD_WebCam-video-index0
+
+    # 相机送到电脑的图像格式，可选MJPG（JPEG压缩）/YUYV（未压缩）。
+    # MJPG支持：1920×1080@20fps、1280×720@20fps、640×480@20fps。
+    # YUYV支持：1920×1080@5fps、1280×720@10fps、640×480@20fps。
+    # 必须与下面width、height、fps组成支持的模式；不支持时启动报错，不自动降级。
+    pixel_format: MJPG
+
+    # 图像宽度，单位像素；可选1920/1280/640，分别匹配高度1080/720/480。
+    width: 1920
+
+    # 图像高度，单位像素；可选1080/720/480，必须匹配上述宽度和格式组合。
+    height: 1080
+
+    # 请求设备输出的目标帧率，单位帧/秒，使用浮点数。
+    # 取值按pixel_format列出的模式选择；20.0不代表任何光照下实际都达到20fps。
+    # 自动曝光可能降低实际采集率；/diagnostics中的capture_fps是实际采集统计值。
+    fps: 20.0
+
+    # 相机的逻辑名称，仅用于诊断中标识设备，不改变节点名、话题或图像内容。
+    camera_name: endoscope
+
+    # 图像和CameraInfo消息header.frame_id，表示图像所属的光学坐标系名称。
+    # 本节点只填写名称，不发布TF，也不会因此旋转或翻转图像。
+    frame_id: endoscope_optical_frame
+
+    # 相机内参与畸变标定文件地址；可选空字符串、file:///绝对路径、package://包名/路径。
+    # 空字符串：按未标定状态发布CameraInfo（K为0）；非空：加载标准ROS标定YAML。
+    # 文件内分辨率必须与width/height相同，否则启动报错；加载标定不会自动矫正图像。
+    camera_info_url: ''
+
+    # 是否发布/endoscope/image_raw，true/false；输出编码固定为bgr8。
+    # true且有订阅者才处理并发布原始图像；false不发布原始图像。
+    # 不影响压缩话题开关、设备采集及CameraInfo发布。
+    publish_raw: true
+
+    # 是否发布/endoscope/image_raw/compressed，true/false。
+    # true且有订阅者才发布；MJPG直接转发设备JPEG，YUYV需要额外编码。
+    # false不发布压缩图像，不影响原始话题开关、设备采集及CameraInfo发布。
+    publish_compressed: true
+
+    # YUYV转换为JPEG时的压缩质量，整数1～100；越高通常越清晰、数据量越大。
+    # 仅pixel_format=YUYV、publish_compressed=true且有压缩订阅者时参与编码。
+    # MJPG模式直接转发设备JPEG，此参数不改变其质量；不发布压缩图像时也不生效。
+    jpeg_quality: 90
+
+    # 图像与CameraInfo话题的可靠性，可选best_effort/reliable；不控制/diagnostics。
+    # best_effort允许丢帧以优先保持实时性；reliable重试发送，慢订阅者可能增加延迟。
+    # 订阅端QoS必须兼容：best_effort发布者不能满足要求reliable的订阅者。
+    qos.reliability: best_effort
+
+    # 图像与CameraInfo话题的发布历史队列深度，正整数，单位帧；不控制采集帧率。
+    # 越大允许缓存更多帧但占用更多内存，也可能积压旧画面；默认3适合同机实时预览。
+    qos.depth: 3
+
+    # 连续多久没有取到设备帧后判定采集超时，正整数，单位毫秒。
+    # 仅采集运行时检查；超时关闭设备并停止出图，之后是否恢复由reconnect.enabled决定。
+    capture.timeout_ms: 2000
+
+    # 运行中断连/采集故障后是否自动重新打开设备，true/false。
+    # true：重试并恢复当前配置；false：保持停止出图，可修复连接后重启节点。
+    # 仅用于运行中的故障恢复；启动配置失败不会自动重新启动配置流程。
+    reconnect.enabled: true
+
+    # 后续重连尝试的间隔，大于0的浮点数，单位秒。
+    # 仅reconnect.enabled=true且采集处于故障恢复中时生效；false时不参与重试。
+    reconnect.interval_sec: 2.0
+
+    # 所有设备图像控制的总开关，true/false，优先于下面的每一项。
+    # true：配置设备时应用下列控制，支持运行中修改子参数。
+    # false：完全不写这些控制，保留硬件现状；运行中修改子参数会被拒绝。
+    # 修改总开关需要重启节点（或cleanup后重新configure），不能在采集中直接切换。
+    controls.apply: true
+
+    # 是否让设备自动决定曝光时间，true/false；前提是controls.apply=true。
+    # true：自动模式3，下面exposure_time_us只保存备用；实际帧率可能随光照变化。
+    # false：手动模式1，应用下面的曝光时间；controls.apply=false时本开关也不下发。
+    controls.auto_exposure: false
+
+    # 手动曝光时间：传感器每帧积累光线的时长，单位微秒；越长通常越亮，运动拖影越明显。
+    # 硬件范围1000～62600，步长100；例如10000=10毫秒。
+    # 仅controls.apply=true且auto_exposure=false时下发，否则只保存为手动备用值。
+    # 手动时还不能超过目标帧间隔：20fps时≤50000；超出会被节点拒绝。
+    # 想用已验证的10毫秒手动模式：将auto_exposure改为false，并将本值改为10000。
+    controls.exposure_time_us: 30000
+
+    # 是否自动校正不同光源造成的偏色，true/false；前提是controls.apply=true。
+    # true：设备自动白平衡，下面的手动色温只保存备用。
+    # false：使用下面的white_balance_temperature；不要求关闭自动曝光，两者独立。
+    controls.auto_white_balance: false
+
+    # 手动白平衡的光源色温，2800～6500 K，步长1；用于匹配照明光源、减少偏色。
+    # 2800K接近暖色灯光，6500K接近日光；该数值不是曝光时间或图像亮度。
+    # 仅controls.apply=true且auto_white_balance=false时下发，否则只保存备用值。
+    controls.white_balance_temperature: 4600
+
+    # 亮度/黑电平偏移，整数0～255，步长1；调节画面整体明暗基准，不改变曝光时长。
+    # controls.apply=true时下发；自动曝光开启不会在节点中禁用此项。
+    controls.brightness: 128
+
+    # 对比度，整数0～95，步长1；调节明暗区域的差异，数值越大通常反差越强。
+    # controls.apply=true时下发；与亮度不同，不用于设置曝光时间。
+    controls.contrast: 6
+
+    # 色彩饱和度，整数0～100，步长1；调节颜色鲜艳程度，较小更淡，较大更鲜艳。
+    # controls.apply=true时下发；自动白平衡开启不会在节点中禁用此项。
+    controls.saturation: 52
+
+    # 色相，整数-2000～2000，步长1；改变颜色的色相/平衡，0为设备默认值。
+    # 使用设备原始数值，不应将它当作色温K或旋转角度；controls.apply=true时下发。
+    controls.hue: 0
+
+    # 伽马，整数64～300，步长1；调节暗部/中间调的明暗曲线，不延长实际曝光。
+    # 使用设备原始值，100不表示100倍；具体曲线映射由固件定义。
+    # controls.apply=true时下发；自动曝光开启不会在节点中禁用此项。
+    controls.gamma: 100
+
+    # 增益，整数1～8，步长1；放大图像信号，增大通常使画面更亮，同时可能增加噪声。
+    # 这是设备原始档位，不代表1～8倍或dB，也不等同延长曝光时间。
+    # controls.apply=true时下发；节点不因自动曝光开启而屏蔽它，最终效果取决于固件协同。
+    controls.gain: 8
+
+    # 锐度，整数1～7，步长1；调节边缘增强，较大通常使边缘更明显。
+    # 这是图像处理，不是镜头对焦，不能让超出清晰距离的物体重新合焦。
+    # controls.apply=true时下发，不受自动曝光/白平衡开关限制。
+    controls.sharpness: 2
+
+    # 背光补偿，整数0～2，步长1；用于背景很亮而主体偏暗的场景。
+    # 0关闭补偿；1/2为设备提供的补偿档位，具体效果由固件实现。
+    # controls.apply=true时下发；节点不要求先关闭自动曝光，固件可能与曝光算法联动。
+    controls.backlight_compensation: 0
+
+    # 电源频率防闪烁，枚举0/50/60：0关闭，50匹配50Hz照明，60匹配60Hz照明。
+    # 用于减少交流照明造成的条纹/闪烁，国内通常选50；不是相机帧率设置。
+    # controls.apply=true时下发；节点不因自动曝光开启而屏蔽它，自动算法可能据此调整曝光。
+    controls.power_line_frequency: 50
+
+    # 当前设备未开放标准手动对焦、自动对焦或光学变焦；本文件不提供这些控制。

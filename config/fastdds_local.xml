@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 默认：同机大图像传输，64MiB共享内存段，仅SHM。
+     source工作空间setup.bash会为当前终端自动配置发布者和订阅者。
+     launch也为节点显式配置。该默认配置不用于跨机器通信。 -->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>endoscope_local_shm</transport_id>
+      <type>SHM</type>
+      <segment_size>67108864</segment_size>
+    </transport_descriptor>
+  </transport_descriptors>
+  <participant profile_name="endoscope_local" is_default_profile="true">
+    <rtps>
+      <userTransports><transport_id>endoscope_local_shm</transport_id></userTransports>
+      <useBuiltinTransports>false</useBuiltinTransports>
+    </rtps>
+  </participant>
+</profiles>
